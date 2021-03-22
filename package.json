@@ -1,0 +1,65 @@
+{
+    "name": "ftts-stub-tcn",
+    "version": "1.0.0",
+    "description": "Stub service to use in place of real TCN API",
+    "scripts": {
+        "build": "rimraf dist && tsc",
+        "start": "npm run build && func start --port 7004",
+        "watch": "nodemon -e ts --exec 'tsc --incremental && npm run start'",
+        "lint": "eslint --ext .js,.ts .",
+        "lint:report": "eslint --ext .js,.ts . -f json -o lint/report.json",
+        "test": "jest",
+        "test:watch": "jest --watch",
+        "test:coverage": "jest --verbose --coverage",
+        "test-ci": "npm run lint && jest --ci --reporters=jest-junit --reporters=jest-standard-reporter",
+        "coverage-ci": "jest --coverage --reporters=jest-standard-reporter",
+        "sonar": "npm run test:coverage && npm run lint:report && npm run sonar-scanner",
+        "sonar-scanner": "sonar-scanner -Dproject.settings=./sonar-scanner.properties -Dsonar.projectBaseDir=''"
+    },
+    "husky": {
+        "hooks": {
+            "pre-push": "npm run lint && npm run test"
+        }
+    },
+    "dependencies": {
+        "luxon": "1.25.0"
+    },
+    "devDependencies": {
+        "@azure/functions": "1.2.2",
+        "@babel/core": "7.10.2",
+        "@babel/plugin-proposal-class-properties": "7.10.1",
+        "@babel/preset-env": "7.10.2",
+        "@babel/preset-typescript": "7.10.1",
+        "@dvsa/eslint-config-ts": "1.0.1",
+        "@types/jest": "26.0.14",
+        "@types/luxon": "1.25.0",
+        "@types/node": "14.0.13",
+        "babel-jest": "26.0.1",
+        "eslint": "7.2.0",
+        "husky": "4.3.0",
+        "jest": "26.4.2",
+        "jest-junit": "11.1.0",
+        "jest-standard-reporter": "1.1.1",
+        "nodemon": "2.0.4",
+        "rimraf": "3.0.2",
+        "typescript": "3.9.5"
+    },
+    "jest": {
+        "testRegex": "./tests/.*.test.ts$",
+        "collectCoverageFrom": [
+            "src/**/*.ts"
+        ],
+        "coverageReporters": [
+            "lcov",
+            "html",
+            "text",
+            "text-summary"
+        ]
+    },
+    "repository": {
+        "type": "git",
+        "url": "git@ssh.dev.azure.com:v3/DvsaDev/ftts-beta/ftts-beta"
+    },
+    "author": "",
+    "license": "ISC"
+}
