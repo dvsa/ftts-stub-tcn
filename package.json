@@ -22,7 +22,7 @@
         }
     },
     "dependencies": {
-        "luxon": "1.25.0"
+        "luxon": "1.26.0"
     },
     "devDependencies": {
         "@azure/functions": "1.2.2",
