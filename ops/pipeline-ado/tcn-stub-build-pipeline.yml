@@ -1,0 +1,171 @@
+# disable auto triggering commits to branches, enable for PRs against specific branches
+trigger:
+  - develop
+
+pr:
+  branches:
+    include:
+      - develop
+      - feature/*
+
+variables:
+- name: app
+  value: ftts_stub_tcn
+
+pool:
+  vmImage: 'ubuntu-18.04'
+
+jobs:
+- job: Build_stub_app
+  displayName: 'Build stub app'
+  variables:
+    DECODE_PERCENTS: false
+  condition: |
+      and(or(startsWith(variables['Build.SourceBranch'], 'refs/pull/'),
+      startsWith(variables['Build.SourceBranch'], 'refs/heads/release/'),
+      startsWith(variables['Build.SourceBranch'], 'refs/heads/develop'),
+      startsWith(variables['Build.SourceBranch'], 'refs/heads/feature/')),
+      succeeded())
+  steps:
+  - task: AzureKeyVault@1
+    inputs:
+      azureSubscription: 'FTTS Dev'
+      KeyVaultName: 'dsuksandevopskv001'
+      SecretsFilter: 'sonarToken, dtrackAppId, dtrackApiKey'
+    displayName: "Getting secrets"
+
+  - task: NodeTool@0
+    inputs:
+      versionSpec: '14.x'
+    displayName: 'Install Node.js'
+
+  - script: |
+      APP_DIR=`echo $(app) | sed "s/_/-/g"`
+      echo "##vso[task.setvariable variable=app_dir]$APP_DIR"
+      APP_NAME=`echo $(app) | cut -d'_' -f2`
+      echo "##vso[task.setvariable variable=app_name]$APP_NAME"
+      if [ -d "ftts-api-integration-tests/$APP_NAME" ]; then
+        echo "##vso[task.setVariable variable=INTTSTDIREXISTS]true"
+      fi
+      if [ -d "ftts-$APP_NAME-app/test/e2e" ]; then
+        echo "##vso[task.setVariable variable=E2ETSTDIREXISTS]true"
+      fi
+      if [ -e ".npmrc" ]; then
+        echo "##vso[task.setVariable variable=NPMRCEXISTS]true"
+      fi
+      BRANCH_NAME=`echo $(Build.SourceBranch) | cut -d'/' -f3-`
+      echo "##vso[task.setvariable variable=branch_name]$BRANCH_NAME"
+    displayName: 'Set variables'
+
+  - task: npmAuthenticate@0
+    inputs:
+      workingFile: '$(System.DefaultWorkingDirectory)/.npmrc'
+    condition: eq(variables.NPMRCEXISTS, 'true')
+
+  - task: SonarQubePrepare@4
+    inputs:
+      SonarQube: 'dsukspfmsq001'
+      scannerMode: 'CLI'
+      configMode: 'file'
+      configFile: '$(System.DefaultWorkingDirectory)/sonar-scanner.properties'
+    continueOnError: true
+
+  - script: |
+      sudo timedatectl set-timezone "Europe/London"
+    displayName: "Adjust timezone"
+
+  - script: |
+      npm config set script-shell '/bin/bash'
+      npm install -g npm
+      npm install || exit
+      npm audit --registry=https://registry.npmjs.org/ || exit
+      npm run build || exit
+      npm run lint:report || exit
+      npm run coverage-ci || exit
+      npm prune --production
+    displayName: 'Build package'
+    workingDirectory: '$(System.DefaultWorkingDirectory)'
+
+  - task: AzureCLI@2
+    displayName: 'Dependency track check'
+    inputs:
+      azureSubscription: 'FTTS Dev'
+      scriptType: 'bash'
+      scriptLocation: 'scriptPath'
+      scriptPath: 'ops/scripts/dt-check-bom-file.sh'
+      arguments: '$(dtrackAppId) $(dtrackApiKey)'
+      workingDirectory: '$(System.DefaultWorkingDirectory)'
+
+  - task: PublishTestResults@2
+    inputs:
+      testResultsFormat: 'JUnit'
+      testResultsFiles: '**/junit.xml'
+      mergeTestResults: true
+      testRunTitle: $(app_name)
+      failTaskOnFailedTests: true
+
+  - task: SonarQubeAnalyze@4
+    displayName: 'Run Code Analysis'
+    continueOnError: true
+
+  - task: SonarQubePublish@4
+    continueOnError: true
+    inputs:
+      pollingTimeoutSec: '300'
+
+  - pwsh: |
+      $token = [System.Text.Encoding]::UTF8.GetBytes($env:sonarToken + ":")
+      $base64 = [System.Convert]::ToBase64String($token)
+
+      $basicAuth = [string]::Format("Basic {0}", $base64)
+      $headers = @{ Authorization = $basicAuth }
+      $run_type = '$(Build.SourceBranch)'.split('/')[1]
+
+      if ($run_type -eq "heads") {
+        $result = Invoke-RestMethod -Method Get -Uri 'https://dsukspfmsq001.azurewebsites.net//api/qualitygates/project_status?branch=$(branch_name)&projectKey=$(app_dir)' -Headers $headers
+        $result | ConvertTo-Json | Write-Host
+      }else{
+        $result = Invoke-RestMethod -Method Get -Uri 'https://dsukspfmsq001.azurewebsites.net//api/qualitygates/project_status?projectKey=$(app_dir)&pullRequest=$(System.PullRequest.PullRequestId)' -Headers $headers
+        $result | ConvertTo-Json | Write-Host
+      }
+
+      if ($result.projectStatus.status -eq "OK") {
+        Write-Host "Quality Gate Succeeded"
+      } else {
+        throw "Quality gate failed"
+      }
+    displayName: "Check Sonar Quality Gate"
+    env:
+      sonarToken: $(sonarToken)
+      projectName: $(app_dir)
+
+  - task: DeleteFiles@1
+    displayName: 'Remove unneeded files'
+    inputs:
+      contents: |
+        ops
+        tests
+        src
+        babel.config.js
+        Dockerfile
+        dt-project-id.conf
+        README.md
+        sonar-project.properties
+        sonar-scanner.properties
+        tsconfig.json
+        bom.xml
+        coverage
+
+  - task: ArchiveFiles@2
+    inputs:
+      rootFolderOrFile: '$(System.DefaultWorkingDirectory)/'
+      includeRootFolder: false
+      archiveType: zip
+      archiveFile: $(Build.ArtifactStagingDirectory)/$(app)-$(Build.BuildId).zip
+      replaceExistingArchive: true
+    displayName: 'Archive application package'
+
+  - publish: $(Build.ArtifactStagingDirectory)
+    artifact: $(app)
+
+

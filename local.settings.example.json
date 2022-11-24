@@ -1,0 +1,13 @@
+{
+    "IsEncrypted": false,
+    "Values": {
+      "AzureFunctionsJobHost__logging__logLevel__Default": "Trace",
+      "AzureWebJobsDashboard": "UseDevelopmentStorage=true",
+      "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+      "LOG_LEVEL": "debug",
+      "NODE_ENV": "development"
+    },
+    "Host": {
+      "CORS": "*"
+    }
+  }
